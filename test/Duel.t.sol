@@ -133,6 +133,96 @@ contract DuelTest is Test {
         vm.stopPrank();
     }
 
+    function test_join_MultipleGamesWithSelfJoins() public {
+        bytes32 lobbyId = getLobbyId(resolver, address(token), AMOUNT, FEE);
+
+        // Player1 creates first game
+        vm.prank(player1);
+        bytes32 game1 = duel.join(resolver, address(token), AMOUNT, FEE);
+
+        // Player1 tries to join their own game (creates second game)
+        vm.prank(player1);
+        bytes32 game2 = duel.join(resolver, address(token), AMOUNT, FEE);
+
+        // Check lobby count after player1's actions
+        (uint128 created, uint128 played) = duel.lobby(lobbyId);
+        assertEq(created, 2, "Created count should be 2");
+        assertEq(played, 0, "Played count should be 0");
+
+        // Player2 joins first game
+        vm.prank(player2);
+        bytes32 joinedGame1 = duel.join(resolver, address(token), AMOUNT, FEE);
+        assertEq(joinedGame1, game1, "Should join first game");
+
+        // Check lobby count after first join
+        (created, played) = duel.lobby(lobbyId);
+        assertEq(created, 2, "Created count should still be 2");
+        assertEq(played, 1, "Played count should be 1");
+
+        // Player1 creates third game
+        vm.prank(player1);
+        bytes32 game3 = duel.join(resolver, address(token), AMOUNT, FEE);
+        assertEq(game3, getGameId(lobbyId, 2), "Should create third game");
+
+        (created, played) = duel.lobby(lobbyId);
+        assertEq(created, 3, "Created count should be 3");
+        assertEq(played, 1, "Played count should be 1");
+
+        // Player2 joins second game
+        vm.prank(player2);
+        bytes32 joinedGame2 = duel.join(resolver, address(token), AMOUNT, FEE);
+        assertEq(joinedGame2, game2, "Should join second game");
+
+        // Verify all game states
+        (address game1_player1, address game1_player2,,,,,) = duel.games(game1);
+        (address game2_player1, address game2_player2,,,,,) = duel.games(game2);
+
+        // Check game1 state (player1 created, player2 joined)
+        assertEq(game1_player1, player1, "First game should have player1");
+        assertEq(game1_player2, player2, "First game should have player2");
+
+        // Check game2 state (created by player1 trying to self-join, player2 joined)
+        assertEq(game2_player1, player1, "Second game should have player1");
+        assertEq(game2_player2, player2, "Second game should have player2");
+
+        // Check final lobby count
+        (created, played) = duel.lobby(lobbyId);
+        assertEq(created, 3, "Created count should remain 3");
+        assertEq(played, 2, "Played count should be 2");
+
+        // Check contract balance
+        assertEq(
+            token.balanceOf(address(duel)),
+            AMOUNT * 5, // 3 from player1's creates + 2 from player2's joins
+            "Contract should hold correct amount of tokens"
+        );
+
+        // Verify player balances
+        assertEq(
+            token.balanceOf(player1),
+            AMOUNT * 10 - (AMOUNT * 3),
+            "Player1 should have correct balance after creating 3 games"
+        );
+        assertEq(
+            token.balanceOf(player2),
+            AMOUNT * 10 - (AMOUNT * 2),
+            "Player2 should have correct balance after joining 2 games"
+        );
+
+        vm.prank(player2);
+        bytes32 joinedGame3 = duel.join(resolver, address(token), AMOUNT, FEE);
+        assertEq(joinedGame3, game3, "Should join third game");
+
+        vm.prank(player2);
+        // Reusing game1 because of stack limit
+        game1 = duel.join(resolver, address(token), AMOUNT, FEE);
+        assertEq(game1, getGameId(lobbyId, 3), "Should create fourth game");
+
+        (created, played) = duel.lobby(lobbyId);
+        assertEq(created, 4, "Created count should be 4");
+        assertEq(played, 3, "Played count should be 3");
+    }
+
     /*//////////////////////////////////////////////////////////////
                              RESOLVE TESTS
     //////////////////////////////////////////////////////////////*/
