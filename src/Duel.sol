@@ -49,6 +49,8 @@ contract Duel is Ownable {
     error NotStarted();
     error InvalidWinner();
     error InvalidSignature();
+    error NotResolver();
+    error AlreadyResolved();
 
     /*//////////////////////////////////////////////////////////////
                             INITIALIZATION
@@ -152,12 +154,67 @@ contract Duel is Ownable {
         }
     }
 
-    /// @notice Cancel a game
+    /// @notice Cancel a game with resolver signature
     /// @param gameId The id of the game
     /// @param signature The signature from the resolver permitting the cancellation
-    function cancel(uint256 gameId, bytes calldata signature) public {}
+    function cancel(uint256 gameId, bytes calldata signature) public {
+        Game storage game = games[gameId];
+
+        // Verify game state
+        if (game.settled) revert AlreadyResolved();
+
+        // Verify resolver signature for cancellation
+        bytes32 messageHash = keccak256(abi.encodePacked(gameId, "CANCEL"));
+        bytes32 signedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
+
+        // Extract signature components
+        require(signature.length == 65, "Invalid signature length");
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := calldataload(signature.offset)
+            s := calldataload(add(signature.offset, 32))
+            v := byte(0, calldataload(add(signature.offset, 64)))
+        }
+
+        // Verify signature is from resolver
+        if (ecrecover(signedHash, v, r, s) != game.resolver) revert InvalidSignature();
+
+        // Mark game as settled
+        game.settled = true;
+
+        // Return tokens to players
+        IERC20 token = IERC20(game.token);
+        if (game.player1 != address(0)) {
+            token.safeTransfer(game.player1, game.amount);
+        }
+        if (game.player2 != address(0)) {
+            token.safeTransfer(game.player2, game.amount);
+        }
+    }
 
     /// @notice Cancel a game directly by the resolver
     /// @param gameId The id of the game
-    function forceCancel(uint256 gameId) public {}
+    function forceCancel(uint256 gameId) public {
+        Game storage game = games[gameId];
+
+        // Only resolver can force cancel
+        if (msg.sender != game.resolver) revert NotResolver();
+
+        // Verify game state
+        if (game.settled) revert AlreadyResolved();
+
+        // Mark game as settled
+        game.settled = true;
+
+        // Return tokens to players
+        IERC20 token = IERC20(game.token);
+        if (game.player1 != address(0)) {
+            token.safeTransfer(game.player1, game.amount);
+        }
+        if (game.player2 != address(0)) {
+            token.safeTransfer(game.player2, game.amount);
+        }
+    }
 }
