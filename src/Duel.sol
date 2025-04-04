@@ -3,10 +3,11 @@ pragma solidity ^0.8.28;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /// @title Duel
 /// @notice A duel between two players resolved by a third party resolver.
-contract Duel {
+contract Duel is Ownable {
     using SafeERC20 for IERC20;
 
     struct Game {
@@ -28,6 +29,12 @@ contract Duel {
 
     error InvalidResolver();
     error InsufficientValue();
+    error AlreadySettled();
+    error NotStarted();
+    error InvalidWinner();
+    error InvalidSignature();
+
+    constructor() Ownable(msg.sender) {}
 
     /// @notice Join a game or create a new one
     /// @param resolver The backend signer that will resolve the game
@@ -76,7 +83,50 @@ contract Duel {
     /// @param gameId The id of the game
     /// @param winner The winner of the game, address(0) if draw
     /// @param signature The signature of the resolver
-    function resolve(uint256 gameId, address winner, bytes calldata signature) public {}
+    function resolve(uint256 gameId, address winner, bytes calldata signature) public {
+        Game storage game = games[gameId];
+
+        // Verify game state
+        if (game.settled) revert AlreadySettled();
+        if (game.player2 == address(0)) revert NotStarted();
+
+        // Verify winner is valid
+        if (winner != address(0) && winner != game.player1 && winner != game.player2) revert InvalidWinner();
+
+        // Verify resolver signature
+        bytes32 messageHash = keccak256(abi.encodePacked(gameId, winner));
+        bytes32 signedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
+
+        // Extract signature components
+        require(signature.length == 65, "Invalid signature length");
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := calldataload(signature.offset)
+            s := calldataload(add(signature.offset, 32))
+            v := byte(0, calldataload(add(signature.offset, 64)))
+        }
+
+        // Verify signature is from resolver
+        if (ecrecover(signedHash, v, r, s) != game.resolver) revert InvalidSignature();
+
+        // Mark game as settled
+        game.settled = true;
+
+        IERC20 token = IERC20(game.token);
+
+        if (winner == address(0)) {
+            // Draw - return full amount to both players
+            token.safeTransfer(game.player1, game.amount);
+            token.safeTransfer(game.player2, game.amount);
+        } else {
+            // Winner takes prize pool (total amount minus fee)
+            token.safeTransfer(winner, game.amount * 2 - game.fee);
+            // Transfer fees to protocol owner
+            token.safeTransfer(owner(), game.fee);
+        }
+    }
 
     /// @notice Cancel a game
     /// @param gameId The id of the game
