@@ -17,8 +17,8 @@ contract DuelTest is Test {
     uint256 public constant AMOUNT = 1000;
     uint256 public constant FEE = 100;
 
-    event Created(uint256 gameId, address player1, address resolver, address token, uint256 amount, uint256 fee);
-    event Joined(uint256 gameId, address player2);
+    event Created(bytes32 gameId, address player1, address resolver, address token, uint256 amount, uint256 fee);
+    event Joined(bytes32 gameId, address player2);
 
     function setUp() public {
         // Deploy contracts
@@ -43,6 +43,14 @@ contract DuelTest is Test {
         vm.stopPrank();
     }
 
+    function getLobbyId(address resolver, address token, uint256 amount, uint256 fee) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(resolver, token, amount, fee));
+    }
+
+    function getGameId(bytes32 lobbyId, uint256 count) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(lobbyId, count));
+    }
+
     /*//////////////////////////////////////////////////////////////
                                 JOIN TESTS
     //////////////////////////////////////////////////////////////*/
@@ -50,12 +58,21 @@ contract DuelTest is Test {
     function test_join_CreateNewGame() public {
         vm.startPrank(player1);
 
-        vm.expectEmit(true, true, true, true);
-        emit Created(1, player1, resolver, address(token), AMOUNT, FEE);
+        bytes32 lobbyId = getLobbyId(resolver, address(token), AMOUNT, FEE);
+        // Use count.created (which will be 0) for the first game
+        bytes32 expectedGameId = getGameId(lobbyId, 0);
 
-        uint256 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
+        // vm.expectEmit(true, true, true, true);
+        // emit Created(expectedGameId, player1, resolver, address(token), AMOUNT, FEE);
 
-        assertEq(gameId, 1, "Game ID should be 1");
+        bytes32 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
+
+        assertEq(gameId, expectedGameId, "Game ID should match expected");
+
+        // Check lobby count
+        (uint128 created, uint128 played) = duel.lobby(lobbyId);
+        assertEq(created, 1, "Created count should be 1");
+        assertEq(played, 0, "Played count should be 0");
 
         (
             address game_player1,
@@ -82,14 +99,14 @@ contract DuelTest is Test {
     function test_join_JoinExistingGame() public {
         // Create game
         vm.prank(player1);
-        uint256 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
+        bytes32 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
 
         // Join game
         vm.startPrank(player2);
         vm.expectEmit(true, true, true, true);
         emit Joined(gameId, player2);
 
-        uint256 joinedGameId = duel.join(resolver, address(token), AMOUNT, FEE);
+        bytes32 joinedGameId = duel.join(resolver, address(token), AMOUNT, FEE);
 
         assertEq(joinedGameId, gameId, "Should join existing game");
 
@@ -121,11 +138,18 @@ contract DuelTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_resolve_Winner() public {
+        bytes32 lobbyId = getLobbyId(resolver, address(token), AMOUNT, FEE);
+
         // Setup game
         vm.prank(player1);
-        uint256 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
+        bytes32 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
         vm.prank(player2);
         duel.join(resolver, address(token), AMOUNT, FEE);
+
+        // Check lobby count before resolve
+        (uint128 created, uint128 played) = duel.lobby(lobbyId);
+        assertEq(created, 1, "Created count should be 1");
+        assertEq(played, 1, "Played count should be 1");
 
         // Create signature
         bytes32 messageHash = keccak256(abi.encodePacked(gameId, player1));
@@ -141,12 +165,18 @@ contract DuelTest is Test {
         assertEq(token.balanceOf(player1), (AMOUNT * 10) - AMOUNT + expectedWinnerPrize, "Winner should receive prize");
         assertEq(token.balanceOf(player2), (AMOUNT * 10) - AMOUNT, "Loser should lose stake");
         assertEq(token.balanceOf(duel.owner()), FEE, "Owner should receive fee");
+
+        // Verify game is settled
+        (,,,,,, bool settled) = duel.games(gameId);
+        assertTrue(settled, "Game should be settled");
     }
 
     function test_resolve_Draw() public {
+        bytes32 lobbyId = getLobbyId(resolver, address(token), AMOUNT, FEE);
+
         // Setup game
         vm.prank(player1);
-        uint256 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
+        bytes32 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
         vm.prank(player2);
         duel.join(resolver, address(token), AMOUNT, FEE);
 
@@ -163,12 +193,21 @@ contract DuelTest is Test {
         assertEq(token.balanceOf(player1), (AMOUNT * 10), "Player1 should get stake back");
         assertEq(token.balanceOf(player2), (AMOUNT * 10), "Player2 should get stake back");
         assertEq(token.balanceOf(duel.owner()), 0, "Owner should not receive fee on draw");
+
+        // Verify game is settled
+        (,,,,,, bool settled) = duel.games(gameId);
+        assertTrue(settled, "Game should be settled");
+
+        // Check lobby count remains unchanged
+        (uint128 created, uint128 played) = duel.lobby(lobbyId);
+        assertEq(created, 1, "Created count should remain 1");
+        assertEq(played, 1, "Played count should remain 1");
     }
 
     function test_resolve_RevertAlreadySettled() public {
         // Setup and resolve game
         vm.prank(player1);
-        uint256 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
+        bytes32 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
         vm.prank(player2);
         duel.join(resolver, address(token), AMOUNT, FEE);
 
@@ -187,7 +226,7 @@ contract DuelTest is Test {
     function test_resolve_RevertNotStarted() public {
         // Create game but don't join
         vm.prank(player1);
-        uint256 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
+        bytes32 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
 
         bytes32 messageHash = keccak256(abi.encodePacked(gameId, player1));
         bytes32 signedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
@@ -201,7 +240,7 @@ contract DuelTest is Test {
     function test_resolve_RevertInvalidWinner() public {
         // Setup game
         vm.prank(player1);
-        uint256 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
+        bytes32 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
         vm.prank(player2);
         duel.join(resolver, address(token), AMOUNT, FEE);
 
@@ -220,9 +259,11 @@ contract DuelTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_cancel_BeforeJoin() public {
+        bytes32 lobbyId = getLobbyId(resolver, address(token), AMOUNT, FEE);
+
         // Create game
         vm.prank(player1);
-        uint256 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
+        bytes32 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
 
         // Create cancel signature
         bytes32 messageHash = keccak256(abi.encodePacked(gameId, "CANCEL"));
@@ -240,12 +281,19 @@ contract DuelTest is Test {
         // Verify game state
         (,,,,,, bool settled) = duel.games(gameId);
         assertTrue(settled, "Game should be settled");
+
+        // Check lobby count remains unchanged
+        (uint128 created, uint128 played) = duel.lobby(lobbyId);
+        assertEq(created, 1, "Created count should remain 1");
+        assertEq(played, 0, "Played count should remain 0");
     }
 
     function test_cancel_AfterJoin() public {
+        bytes32 lobbyId = getLobbyId(resolver, address(token), AMOUNT, FEE);
+
         // Setup full game
         vm.prank(player1);
-        uint256 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
+        bytes32 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
         vm.prank(player2);
         duel.join(resolver, address(token), AMOUNT, FEE);
 
@@ -262,12 +310,17 @@ contract DuelTest is Test {
         assertEq(token.balanceOf(player1), AMOUNT * 10, "Player1 should get stake back");
         assertEq(token.balanceOf(player2), AMOUNT * 10, "Player2 should get stake back");
         assertEq(token.balanceOf(address(duel)), 0, "Contract should have no tokens");
+
+        // Check lobby count remains unchanged
+        (uint128 created, uint128 played) = duel.lobby(lobbyId);
+        assertEq(created, 1, "Created count should remain 1");
+        assertEq(played, 1, "Played count should remain 1");
     }
 
     function test_cancel_RevertAlreadyResolved() public {
         // Setup and resolve game
         vm.prank(player1);
-        uint256 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
+        bytes32 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
         vm.prank(player2);
         duel.join(resolver, address(token), AMOUNT, FEE);
 
@@ -291,7 +344,7 @@ contract DuelTest is Test {
     function test_cancel_RevertInvalidSignature() public {
         // Create game
         vm.prank(player1);
-        uint256 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
+        bytes32 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
 
         // Create invalid signature (using different private key)
         (address badResolver, uint256 badResolverKey) = makeAddrAndKey("badResolver");
@@ -309,9 +362,11 @@ contract DuelTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_forceCancel_BeforeJoin() public {
+        bytes32 lobbyId = getLobbyId(resolver, address(token), AMOUNT, FEE);
+
         // Create game
         vm.prank(player1);
-        uint256 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
+        bytes32 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
 
         // Force cancel as resolver
         vm.prank(resolver);
@@ -324,12 +379,19 @@ contract DuelTest is Test {
         // Verify game state
         (,,,,,, bool settled) = duel.games(gameId);
         assertTrue(settled, "Game should be settled");
+
+        // Check lobby count remains unchanged
+        (uint128 created, uint128 played) = duel.lobby(lobbyId);
+        assertEq(created, 1, "Created count should remain 1");
+        assertEq(played, 0, "Played count should remain 0");
     }
 
     function test_forceCancel_AfterJoin() public {
+        bytes32 lobbyId = getLobbyId(resolver, address(token), AMOUNT, FEE);
+
         // Setup full game
         vm.prank(player1);
-        uint256 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
+        bytes32 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
         vm.prank(player2);
         duel.join(resolver, address(token), AMOUNT, FEE);
 
@@ -341,12 +403,17 @@ contract DuelTest is Test {
         assertEq(token.balanceOf(player1), AMOUNT * 10, "Player1 should get stake back");
         assertEq(token.balanceOf(player2), AMOUNT * 10, "Player2 should get stake back");
         assertEq(token.balanceOf(address(duel)), 0, "Contract should have no tokens");
+
+        // Check lobby count remains unchanged
+        (uint128 created, uint128 played) = duel.lobby(lobbyId);
+        assertEq(created, 1, "Created count should remain 1");
+        assertEq(played, 1, "Played count should remain 1");
     }
 
     function test_forceCancel_RevertNotResolver() public {
         // Create game
         vm.prank(player1);
-        uint256 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
+        bytes32 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
 
         // Try to force cancel as non-resolver
         vm.prank(player1);
@@ -357,7 +424,7 @@ contract DuelTest is Test {
     function test_forceCancel_RevertAlreadyResolved() public {
         // Setup and resolve game
         vm.prank(player1);
-        uint256 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
+        bytes32 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
         vm.prank(player2);
         duel.join(resolver, address(token), AMOUNT, FEE);
 

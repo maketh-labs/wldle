@@ -24,20 +24,24 @@ contract Duel is Ownable {
         bool settled;
     }
 
+    struct Count {
+        uint128 created;
+        uint128 played;
+    }
+
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
     //////////////////////////////////////////////////////////////*/
 
-    uint256 public currentGameId;
-    mapping(bytes32 gameKey => uint256 gameId) public lobby;
-    mapping(uint256 gameId => Game game) public games;
+    mapping(bytes32 lobbyId => Count count) public lobby;
+    mapping(bytes32 gameId => Game game) public games;
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event Created(uint256 gameId, address player1, address resolver, address token, uint256 amount, uint256 fee);
-    event Joined(uint256 gameId, address player2);
+    event Created(bytes32 gameId, address player1, address resolver, address token, uint256 amount, uint256 fee);
+    event Joined(bytes32 gameId, address player2);
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -67,7 +71,7 @@ contract Duel is Ownable {
     /// @param token The ERC20 token to be used
     /// @param amount Amount of tokens to bet
     /// @param fee Fee taken by the protocol
-    function join(address resolver, address token, uint256 amount, uint256 fee) public returns (uint256) {
+    function join(address resolver, address token, uint256 amount, uint256 fee) public returns (bytes32) {
         if (resolver == address(0)) revert InvalidResolver();
         if (amount <= fee) revert InsufficientValue();
 
@@ -75,22 +79,45 @@ contract Duel is Ownable {
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
 
         // Key for finding matching games
-        bytes32 gameKey = keccak256(abi.encodePacked(resolver, token, amount, fee));
-        uint256 existingGameId = lobby[gameKey];
+        bytes32 lobbyId = keccak256(abi.encodePacked(resolver, token, amount, fee));
+        Count storage count = lobby[lobbyId];
 
-        // If there's an available game, join it
-        Game storage game = games[existingGameId];
+        // Get the next game to be played
+        bytes32 nextGameId = keccak256(abi.encodePacked(lobbyId, count.played));
+        Game storage game = games[nextGameId];
+
+        // If there's an available game
         if (game.player1 != address(0) && game.player2 == address(0)) {
+            // If trying to join own game, create new one instead
+            if (game.player1 == msg.sender) {
+                bytes32 newGameId = keccak256(abi.encodePacked(lobbyId, count.created));
+                count.created++;
+
+                games[newGameId] = Game({
+                    player1: msg.sender,
+                    player2: address(0),
+                    resolver: resolver,
+                    amount: amount,
+                    fee: fee,
+                    token: token,
+                    settled: false
+                });
+
+                emit Created(newGameId, msg.sender, resolver, token, amount, fee);
+                return newGameId;
+            }
+
+            // Join existing game
             game.player2 = msg.sender;
-            emit Joined(existingGameId, msg.sender);
-            return existingGameId;
+            count.played++;
+            emit Joined(nextGameId, msg.sender);
+            return nextGameId;
         }
 
-        // Create new game with incremented ID
-        uint256 gameId = ++currentGameId;
-        lobby[gameKey] = gameId;
+        // Create first game or new game after previous one is filled
+        bytes32 gameId = keccak256(abi.encodePacked(lobbyId, count.created));
+        count.created++;
 
-        // Create a new game
         games[gameId] = Game({
             player1: msg.sender,
             player2: address(0),
@@ -109,7 +136,7 @@ contract Duel is Ownable {
     /// @param gameId The id of the game
     /// @param winner The winner of the game, address(0) if draw
     /// @param signature The signature of the resolver
-    function resolve(uint256 gameId, address winner, bytes calldata signature) public {
+    function resolve(bytes32 gameId, address winner, bytes calldata signature) public {
         Game storage game = games[gameId];
 
         // Verify game state
@@ -157,7 +184,7 @@ contract Duel is Ownable {
     /// @notice Cancel a game with resolver signature
     /// @param gameId The id of the game
     /// @param signature The signature from the resolver permitting the cancellation
-    function cancel(uint256 gameId, bytes calldata signature) public {
+    function cancel(bytes32 gameId, bytes calldata signature) public {
         Game storage game = games[gameId];
 
         // Verify game state
@@ -196,7 +223,7 @@ contract Duel is Ownable {
 
     /// @notice Cancel a game directly by the resolver
     /// @param gameId The id of the game
-    function forceCancel(uint256 gameId) public {
+    function forceCancel(bytes32 gameId) public {
         Game storage game = games[gameId];
 
         // Only resolver can force cancel
