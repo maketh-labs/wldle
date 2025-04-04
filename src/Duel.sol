@@ -33,7 +33,9 @@ contract Duel is Ownable {
                                 STORAGE
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev lobbyId is created by keccak256(abi.encodePacked(resolver, token, amount, fee))
     mapping(bytes32 lobbyId => Count count) public lobby;
+    /// @dev gameId is created by keccak256(abi.encodePacked(lobbyId, count.created))
     mapping(bytes32 gameId => Game game) public games;
 
     /*//////////////////////////////////////////////////////////////

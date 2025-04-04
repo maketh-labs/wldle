@@ -47,7 +47,7 @@ contract DuelTest is Test {
         return keccak256(abi.encodePacked(resolver, token, amount, fee));
     }
 
-    function getGameId(bytes32 lobbyId, uint256 count) internal pure returns (bytes32) {
+    function getGameId(bytes32 lobbyId, uint128 count) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(lobbyId, count));
     }
 
