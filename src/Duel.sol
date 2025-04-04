@@ -10,6 +10,10 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 contract Duel is Ownable {
     using SafeERC20 for IERC20;
 
+    /*//////////////////////////////////////////////////////////////
+                                 TYPES
+    //////////////////////////////////////////////////////////////*/
+
     struct Game {
         address player1;
         address player2;
@@ -20,12 +24,24 @@ contract Duel is Ownable {
         bool settled;
     }
 
+    /*//////////////////////////////////////////////////////////////
+                                STORAGE
+    //////////////////////////////////////////////////////////////*/
+
     uint256 public currentGameId;
     mapping(bytes32 gameKey => uint256 gameId) public lobby;
     mapping(uint256 gameId => Game game) public games;
 
+    /*//////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
+
     event Created(uint256 gameId, address player1, address resolver, address token, uint256 amount, uint256 fee);
     event Joined(uint256 gameId, address player2);
+
+    /*//////////////////////////////////////////////////////////////
+                                ERRORS
+    //////////////////////////////////////////////////////////////*/
 
     error InvalidResolver();
     error InsufficientValue();
@@ -34,7 +50,15 @@ contract Duel is Ownable {
     error InvalidWinner();
     error InvalidSignature();
 
+    /*//////////////////////////////////////////////////////////////
+                            INITIALIZATION
+    //////////////////////////////////////////////////////////////*/
+
     constructor() Ownable(msg.sender) {}
+
+    /*//////////////////////////////////////////////////////////////
+                               GAME LOGIC
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Join a game or create a new one
     /// @param resolver The backend signer that will resolve the game
