@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ISignatureTransfer} from "@uniswap/permit2/src/interfaces/ISignatureTransfer.sol";
 
 /// @title Duel
 /// @notice A duel between two players resolved by a third party resolver.
@@ -38,6 +39,9 @@ contract Duel is Ownable {
     /// @dev gameId is created by keccak256(abi.encodePacked(lobbyId, count.created))
     mapping(bytes32 gameId => Game game) public games;
 
+    /// @dev The Permit2 contract address
+    ISignatureTransfer public immutable permit2;
+
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -62,23 +66,51 @@ contract Duel is Ownable {
                             INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
-    constructor() Ownable(msg.sender) {}
+    constructor(address _permit2) Ownable(msg.sender) {
+        permit2 = ISignatureTransfer(_permit2);
+    }
 
     /*//////////////////////////////////////////////////////////////
                                GAME LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Join a game or create a new one
+    /// @notice Join a game or create a new one using standard ERC20 approval
+    function join(address resolver, address token, uint256 amount, uint256 fee) public returns (bytes32) {
+        // Safe transfer tokens from player to contract
+        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+        
+        return _join(resolver, token, amount, fee);
+    }
+
+    /// @notice Join a game or create a new one using Permit2
+    function joinWithPermit(
+        address resolver,
+        address token,
+        uint256 amount,
+        uint256 fee,
+        ISignatureTransfer.PermitTransferFrom calldata permit,
+        ISignatureTransfer.SignatureTransferDetails calldata transferDetails,
+        bytes calldata signature
+    ) public returns (bytes32) {
+        // Transfer tokens using Permit2's SignatureTransfer
+        permit2.permitTransferFrom(
+            permit, // Contains token, amount, nonce, deadline
+            transferDetails, // Contains recipient (this contract) and requested amount
+            msg.sender, // owner
+            signature // signature authorizing the transfer
+        );
+
+        return _join(resolver, token, amount, fee);
+    }
+
+    /// @notice Internal join function
     /// @param resolver The backend signer that will resolve the game
     /// @param token The ERC20 token to be used
     /// @param amount Amount of tokens to bet
     /// @param fee Fee taken by the protocol
-    function join(address resolver, address token, uint256 amount, uint256 fee) public returns (bytes32) {
+    function _join(address resolver, address token, uint256 amount, uint256 fee) internal returns (bytes32) {
         if (resolver == address(0)) revert InvalidResolver();
         if (amount <= fee) revert InsufficientValue();
-
-        // Safe transfer tokens from player to contract
-        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
 
         // Key for finding matching games
         bytes32 lobbyId = keccak256(abi.encodePacked(resolver, token, amount, fee));

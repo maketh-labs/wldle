@@ -22,7 +22,7 @@ contract DuelTest is Test {
 
     function setUp() public {
         // Deploy contracts
-        duel = new Duel();
+        duel = new Duel(address(0));
         token = new ERC20Mock();
 
         // Setup accounts
