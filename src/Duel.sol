@@ -4,11 +4,12 @@ pragma solidity ^0.8.28;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ISignatureTransfer} from "@uniswap/permit2/src/interfaces/ISignatureTransfer.sol";
 
 /// @title Duel
 /// @notice A duel between two players resolved by a third party resolver.
-contract Duel is Ownable {
+contract Duel is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -75,10 +76,10 @@ contract Duel is Ownable {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Join a game or create a new one using standard ERC20 approval
-    function join(address resolver, address token, uint256 amount, uint256 fee) public returns (bytes32) {
+    function join(address resolver, address token, uint256 amount, uint256 fee) public nonReentrant returns (bytes32) {
         // Safe transfer tokens from player to contract
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
-        
+
         return _join(resolver, token, amount, fee);
     }
 
@@ -91,14 +92,9 @@ contract Duel is Ownable {
         ISignatureTransfer.PermitTransferFrom calldata permit,
         ISignatureTransfer.SignatureTransferDetails calldata transferDetails,
         bytes calldata signature
-    ) public returns (bytes32) {
+    ) public nonReentrant returns (bytes32) {
         // Transfer tokens using Permit2's SignatureTransfer
-        permit2.permitTransferFrom(
-            permit, // Contains token, amount, nonce, deadline
-            transferDetails, // Contains recipient (this contract) and requested amount
-            msg.sender, // owner
-            signature // signature authorizing the transfer
-        );
+        permit2.permitTransferFrom(permit, transferDetails, msg.sender, signature);
 
         return _join(resolver, token, amount, fee);
     }
@@ -170,7 +166,7 @@ contract Duel is Ownable {
     /// @param gameId The id of the game
     /// @param winner The winner of the game, address(0) if draw
     /// @param signature The signature of the resolver
-    function resolve(bytes32 gameId, address winner, bytes calldata signature) public {
+    function resolve(bytes32 gameId, address winner, bytes calldata signature) public nonReentrant {
         Game storage game = games[gameId];
 
         // Verify game state
@@ -218,7 +214,7 @@ contract Duel is Ownable {
     /// @notice Cancel a game with resolver signature
     /// @param gameId The id of the game
     /// @param signature The signature from the resolver permitting the cancellation
-    function cancel(bytes32 gameId, bytes calldata signature) public {
+    function cancel(bytes32 gameId, bytes calldata signature) public nonReentrant {
         Game storage game = games[gameId];
 
         // Verify game state
@@ -257,7 +253,7 @@ contract Duel is Ownable {
 
     /// @notice Cancel a game directly by the resolver
     /// @param gameId The id of the game
-    function forceCancel(bytes32 gameId) public {
+    function forceCancel(bytes32 gameId) public nonReentrant {
         Game storage game = games[gameId];
 
         // Only resolver can force cancel
