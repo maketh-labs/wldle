@@ -49,6 +49,8 @@ contract Duel is Ownable, ReentrancyGuard {
 
     event Created(bytes32 gameId, address player1, address resolver, address token, uint256 amount, uint256 fee);
     event Joined(bytes32 gameId, address player2);
+    event Resolved(bytes32 gameId, address winner);
+    event Cancelled(bytes32 gameId);
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -67,6 +69,7 @@ contract Duel is Ownable, ReentrancyGuard {
                             INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
+    /// @param _permit2 0x000000000022D473030F116dDEE9F6B43aC78BA3
     constructor(address _permit2) Ownable(msg.sender) {
         permit2 = ISignatureTransfer(_permit2);
     }
@@ -209,6 +212,7 @@ contract Duel is Ownable, ReentrancyGuard {
             // Transfer fees to protocol owner
             token.safeTransfer(owner(), game.fee);
         }
+        emit Resolved(gameId, winner);
     }
 
     /// @notice Cancel a game with resolver signature
@@ -249,6 +253,8 @@ contract Duel is Ownable, ReentrancyGuard {
         if (game.player2 != address(0)) {
             token.safeTransfer(game.player2, game.amount);
         }
+
+        emit Cancelled(gameId);
     }
 
     /// @notice Cancel a game directly by the resolver
@@ -273,5 +279,7 @@ contract Duel is Ownable, ReentrancyGuard {
         if (game.player2 != address(0)) {
             token.safeTransfer(game.player2, game.amount);
         }
+
+        emit Cancelled(gameId);
     }
 }

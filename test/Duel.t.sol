@@ -19,6 +19,8 @@ contract DuelTest is Test {
 
     event Created(bytes32 gameId, address player1, address resolver, address token, uint256 amount, uint256 fee);
     event Joined(bytes32 gameId, address player2);
+    event Resolved(bytes32 gameId, address winner);
+    event Cancelled(bytes32 gameId);
 
     function setUp() public {
         // Deploy contracts
@@ -247,6 +249,10 @@ contract DuelTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(resolverPrivateKey, signedHash);
         bytes memory signature = abi.encodePacked(r, s, v);
 
+        // Add event expectation before resolve
+        vm.expectEmit(true, true, true, true);
+        emit Resolved(gameId, player1);
+
         // Resolve game
         duel.resolve(gameId, player1, signature);
 
@@ -275,6 +281,10 @@ contract DuelTest is Test {
         bytes32 signedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(resolverPrivateKey, signedHash);
         bytes memory signature = abi.encodePacked(r, s, v);
+
+        // Add event expectation before resolve
+        vm.expectEmit(true, true, true, true);
+        emit Resolved(gameId, address(0));
 
         // Resolve game
         duel.resolve(gameId, address(0), signature);
@@ -361,6 +371,10 @@ contract DuelTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(resolverPrivateKey, signedHash);
         bytes memory signature = abi.encodePacked(r, s, v);
 
+        // Add event expectation before cancel
+        vm.expectEmit(true, true, true, true);
+        emit Cancelled(gameId);
+
         // Cancel game
         duel.cancel(gameId, signature);
 
@@ -392,6 +406,10 @@ contract DuelTest is Test {
         bytes32 signedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(resolverPrivateKey, signedHash);
         bytes memory signature = abi.encodePacked(r, s, v);
+
+        // Add event expectation before cancel
+        vm.expectEmit(true, true, true, true);
+        emit Cancelled(gameId);
 
         // Cancel game
         duel.cancel(gameId, signature);
@@ -458,6 +476,10 @@ contract DuelTest is Test {
         vm.prank(player1);
         bytes32 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
 
+        // Add event expectation before force cancel
+        vm.expectEmit(true, true, true, true);
+        emit Cancelled(gameId);
+
         // Force cancel as resolver
         vm.prank(resolver);
         duel.forceCancel(gameId);
@@ -484,6 +506,10 @@ contract DuelTest is Test {
         bytes32 gameId = duel.join(resolver, address(token), AMOUNT, FEE);
         vm.prank(player2);
         duel.join(resolver, address(token), AMOUNT, FEE);
+
+        // Add event expectation before force cancel
+        vm.expectEmit(true, true, true, true);
+        emit Cancelled(gameId);
 
         // Force cancel as resolver
         vm.prank(resolver);
