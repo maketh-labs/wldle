@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IWorldID} from "./interfaces/IWorldID.sol";
 import {ByteHasher} from "./helpers/ByteHasher.sol";
 
@@ -9,17 +10,16 @@ import {ByteHasher} from "./helpers/ByteHasher.sol";
 /// @notice A contract that distributes daily tokens to unique humans verified by World ID
 contract Daily {
     using ByteHasher for bytes;
+    using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Emitted when a user claims their daily tokens
-    event DailyClaimed(address indexed user, uint256 amount, uint256 day);
+    event DailyClaimed(address indexed user, uint256 amount, uint256 day, uint256 streak);
     /// @notice Emitted when a user successfully verifies their identity
     event IdentityVerified(address indexed user, uint256 nullifierHash);
-    /// @notice Emitted when the daily amount is updated
-    event DailyAmountUpdated(uint256 newAmount);
 
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
@@ -42,8 +42,11 @@ contract Daily {
     /// @notice DLY token contract used for distributions
     IERC20 public immutable dlyToken;
 
-    /// @notice Daily claim amount (100 DLY = 100 * 1e18)
-    uint256 public constant DAILY_AMOUNT = 100 ether;
+    /// @notice Base daily claim amount (1 DLY = 1 * 1e18)
+    uint256 public constant BASE_AMOUNT = 1 ether;
+
+    /// @notice Maximum streak reward (20 DLY = 20 * 1e18)
+    uint256 public constant MAX_STREAK = 20;
 
     /// @notice The World ID group ID (always 1)
     uint256 internal immutable groupId = 1;
@@ -53,6 +56,9 @@ contract Daily {
 
     /// @notice Map to track claims for each day for each user
     mapping(address => uint256) public lastClaimDay;
+
+    /// @notice Map to track current streak for each user
+    mapping(address => uint256) public currentStreak;
 
     /// @notice Map to track if a nullifier hash has been used
     mapping(uint256 => bool) internal nullifierHashes;
@@ -82,26 +88,37 @@ contract Daily {
     /// @param nullifierHash The nullifier hash for this proof
     /// @param proof The zero-knowledge proof that demonstrates the claimer is registered with World ID
     function claimDaily(address receiver, uint256 root, uint256 nullifierHash, uint256[8] calldata proof) public {
-        // Check contract balance
-        uint256 balance = dlyToken.balanceOf(address(this));
-        if (balance < DAILY_AMOUNT) {
-            revert InsufficientBalance(DAILY_AMOUNT, balance);
-        }
+        // Verify World ID proof
+        verifyIdentity(receiver, root, nullifierHash, proof);
+        
+        uint256 currentDay = getCurrentDay();
+        uint256 lastClaim = lastClaimDay[receiver];
 
         // Check if already claimed today
-        uint256 currentDay = getCurrentDay();
-        if (lastClaimDay[receiver] >= currentDay) {
+        if (lastClaim >= currentDay) {
             revert AlreadyClaimed(currentDay);
         }
 
-        // Verify World ID proof
-        verifyIdentity(receiver, root, nullifierHash, proof);
+        uint256 streak;
+        if (lastClaim < currentDay - 1) {
+            // Reset streak if missed a day or is the first time claiming
+            streak = 1;
+        } else {
+            // Increment streak if claimed the day before
+            streak = currentStreak[receiver] + 1;
+        }
+        currentStreak[receiver] = streak;
 
-        // Update state and transfer tokens
+        // Calculate reward amount (streak) * 1 DLY, capped at MAX_STREAK
+        uint256 rewardAmount = streak > MAX_STREAK ? MAX_STREAK * BASE_AMOUNT : streak * BASE_AMOUNT;
+
+        // Update state
         lastClaimDay[receiver] = currentDay;
-        require(dlyToken.transfer(receiver, DAILY_AMOUNT), "Transfer failed");
 
-        emit DailyClaimed(receiver, DAILY_AMOUNT, currentDay);
+        // Transfer tokens
+        dlyToken.safeTransfer(receiver, rewardAmount);
+
+        emit DailyClaimed(receiver, rewardAmount, currentDay, streak);
     }
 
     /*//////////////////////////////////////////////////////////////

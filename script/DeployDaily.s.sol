@@ -23,7 +23,7 @@ contract DeployDailyScript is Script {
 
         daily = new Daily(IWorldID(worldId), address(dlyToken), appId, actionId);
 
-        dlyToken.transfer(address(daily), 10_000_000_000 ether);
+        dlyToken.transfer(address(daily), 1_000_000_000 ether);
 
         vm.stopBroadcast();
 
