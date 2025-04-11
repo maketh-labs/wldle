@@ -124,7 +124,6 @@ contract Duel is Ownable, ReentrancyGuard {
             // If trying to join own game, create new one instead
             if (game.player1 == msg.sender) {
                 bytes32 newGameId = keccak256(abi.encodePacked(lobbyId, count.created));
-                count.created++;
 
                 games[newGameId] = Game({
                     player1: msg.sender,
@@ -136,6 +135,7 @@ contract Duel is Ownable, ReentrancyGuard {
                     settled: false
                 });
 
+                count.created++;
                 emit Created(newGameId, msg.sender, resolver, token, amount, fee);
                 return newGameId;
             }
@@ -149,7 +149,6 @@ contract Duel is Ownable, ReentrancyGuard {
 
         // Create first game or new game after previous one is filled
         bytes32 gameId = keccak256(abi.encodePacked(lobbyId, count.created));
-        count.created++;
 
         games[gameId] = Game({
             player1: msg.sender,
@@ -161,6 +160,7 @@ contract Duel is Ownable, ReentrancyGuard {
             settled: false
         });
 
+        count.created++;
         emit Created(gameId, msg.sender, resolver, token, amount, fee);
         return gameId;
     }
