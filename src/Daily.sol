@@ -18,15 +18,11 @@ contract Daily {
 
     /// @notice Emitted when a user claims their daily tokens
     event DailyClaimed(address indexed user, uint256 amount, uint256 day, uint256 streak);
-    /// @notice Emitted when a user successfully verifies their identity
-    event IdentityVerified(address indexed user, uint256 nullifierHash);
 
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Thrown when attempting to reuse a nullifier
-    error DuplicateNullifier(uint256 nullifierHash);
     /// @notice Thrown when user has already claimed today
     error AlreadyClaimed(uint256 day);
     /// @notice Thrown when contract doesn't have enough tokens
@@ -83,19 +79,21 @@ contract Daily {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Claims daily tokens after verifying World ID proof
-    /// @param receiver The address receiving the tokens
     /// @param root The root of the Merkle tree
     /// @param nullifierHash The nullifier hash for this proof
     /// @param proof The zero-knowledge proof that demonstrates the claimer is registered with World ID
-    function claimDaily(address receiver, uint256 root, uint256 nullifierHash, uint256[8] calldata proof) public {
+    function claimDaily(uint256 root, uint256 nullifierHash, uint256[8] calldata proof) public {
         // Verify World ID proof
-        verifyIdentity(receiver, root, nullifierHash, proof);
-        
+        worldId.verifyProof(
+            root, groupId, abi.encodePacked(msg.sender).hashToField(), nullifierHash, externalNullifier, proof
+        );
+
         uint256 currentDay = getCurrentDay();
-        uint256 lastClaim = lastClaimDay[receiver];
+        uint256 lastClaim = lastClaimDay[msg.sender];
 
         // Check if already claimed today
         if (lastClaim >= currentDay) {
+            // TODO: uncomment this
             revert AlreadyClaimed(currentDay);
         }
 
@@ -105,46 +103,20 @@ contract Daily {
             streak = 1;
         } else {
             // Increment streak if claimed the day before
-            streak = currentStreak[receiver] + 1;
+            streak = currentStreak[msg.sender] + 1;
         }
-        currentStreak[receiver] = streak;
+        currentStreak[msg.sender] = streak;
 
         // Calculate reward amount (streak) * 1 DLY, capped at MAX_STREAK
         uint256 rewardAmount = streak > MAX_STREAK ? MAX_STREAK * BASE_AMOUNT : streak * BASE_AMOUNT;
 
         // Update state
-        lastClaimDay[receiver] = currentDay;
+        lastClaimDay[msg.sender] = currentDay;
 
         // Transfer tokens
-        dlyToken.safeTransfer(receiver, rewardAmount);
+        dlyToken.safeTransfer(msg.sender, rewardAmount);
 
-        emit DailyClaimed(receiver, rewardAmount, currentDay, streak);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                            INTERNAL FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Verifies the World ID proof
-    /// @param signal The user's address
-    /// @param root The root of the Merkle tree
-    /// @param nullifierHash The nullifier hash for this proof
-    /// @param proof The zero-knowledge proof
-    function verifyIdentity(address signal, uint256 root, uint256 nullifierHash, uint256[8] calldata proof) internal {
-        // Verify nullifier is not used
-        if (nullifierHashes[nullifierHash]) {
-            revert DuplicateNullifier(nullifierHash);
-        }
-
-        // Verify the provided proof
-        worldId.verifyProof(
-            root, groupId, abi.encodePacked(signal).hashToField(), nullifierHash, externalNullifier, proof
-        );
-
-        // Mark nullifier as used
-        nullifierHashes[nullifierHash] = true;
-
-        emit IdentityVerified(signal, nullifierHash);
+        emit DailyClaimed(msg.sender, rewardAmount, currentDay, streak);
     }
 
     /*//////////////////////////////////////////////////////////////
