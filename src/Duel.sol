@@ -48,7 +48,7 @@ contract Duel is Ownable, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     event Created(bytes32 gameId, address player1, address resolver, address token, uint256 amount, uint256 fee);
-    event Joined(bytes32 gameId, address player2);
+    event Joined(bytes32 gameId, address player1, address player2);
     event Resolved(bytes32 gameId, address winner);
     event Cancelled(bytes32 gameId);
 
@@ -143,7 +143,7 @@ contract Duel is Ownable, ReentrancyGuard {
             // Join existing game
             game.player2 = msg.sender;
             count.played++;
-            emit Joined(nextGameId, msg.sender);
+            emit Joined(nextGameId, game.player1, msg.sender);
             return nextGameId;
         }
 

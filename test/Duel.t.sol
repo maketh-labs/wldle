@@ -18,7 +18,7 @@ contract DuelTest is Test {
     uint256 public constant FEE = 100;
 
     event Created(bytes32 gameId, address player1, address resolver, address token, uint256 amount, uint256 fee);
-    event Joined(bytes32 gameId, address player2);
+    event Joined(bytes32 gameId, address player1, address player2);
     event Resolved(bytes32 gameId, address winner);
     event Cancelled(bytes32 gameId);
 
@@ -106,7 +106,7 @@ contract DuelTest is Test {
         // Join game
         vm.startPrank(player2);
         vm.expectEmit(true, true, true, true);
-        emit Joined(gameId, player2);
+        emit Joined(gameId, player1, player2);
 
         bytes32 joinedGameId = duel.join(resolver, address(token), AMOUNT, FEE);
 
