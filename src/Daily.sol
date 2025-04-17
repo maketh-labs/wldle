@@ -41,8 +41,8 @@ contract Daily {
     /// @notice Base daily claim amount (1 DLY = 1 * 1e18)
     uint256 public constant BASE_AMOUNT = 1 ether;
 
-    /// @notice Maximum streak reward (20 DLY = 20 * 1e18)
-    uint256 public constant MAX_STREAK = 20;
+    /// @notice Maximum streak reward (10 DLY = 10 * 1e18)
+    uint256 public constant MAX_STREAK = 10;
 
     /// @notice The World ID group ID (always 1)
     uint256 internal immutable groupId = 1;
@@ -54,7 +54,7 @@ contract Daily {
     mapping(address => uint256) public lastClaimDay;
 
     /// @notice Map to track current streak for each user
-    mapping(address => uint256) public currentStreak;
+    mapping(address => uint256) public streakOf;
 
     /// @notice Map to track if a nullifier hash has been used
     mapping(uint256 => bool) internal nullifierHashes;
@@ -103,9 +103,9 @@ contract Daily {
             streak = 1;
         } else {
             // Increment streak if claimed the day before
-            streak = currentStreak[msg.sender] + 1;
+            streak = streakOf[msg.sender] + 1;
         }
-        currentStreak[msg.sender] = streak;
+        streakOf[msg.sender] = streak;
 
         // Calculate reward amount (streak) * 1 DLY, capped at MAX_STREAK
         uint256 rewardAmount = streak > MAX_STREAK ? MAX_STREAK * BASE_AMOUNT : streak * BASE_AMOUNT;
@@ -134,6 +134,18 @@ contract Daily {
     /// @return Whether the user can claim today
     function canClaimToday(address user) public view returns (bool) {
         return lastClaimDay[user] < getCurrentDay();
+    }
+
+    /// @notice Get the current streak for a user, accounting for broken streaks
+    /// @param user The address to check
+    /// @return The current streak (0 if broken, or current streak value if maintained)
+    function currentStreak(address user) public view returns (uint256) {
+        uint256 lastClaim = lastClaimDay[user];
+        uint256 currentDay = getCurrentDay();
+        if (lastClaim < currentDay - 1) {
+            return 0;
+        }
+        return streakOf[user];
     }
 
     /// @notice Get time remaining until next claim is available
