@@ -3,13 +3,12 @@ pragma solidity ^0.8.28;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ISignatureTransfer} from "@uniswap/permit2/src/interfaces/ISignatureTransfer.sol";
 
 /// @title Duel
 /// @notice A duel between two players resolved by a third party resolver.
-contract Duel is Ownable, ReentrancyGuard {
+contract Duel is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -70,7 +69,7 @@ contract Duel is Ownable, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /// @param _permit2 0x000000000022D473030F116dDEE9F6B43aC78BA3
-    constructor(address _permit2) Ownable(msg.sender) {
+    constructor(address _permit2) {
         permit2 = ISignatureTransfer(_permit2);
     }
 
@@ -209,8 +208,8 @@ contract Duel is Ownable, ReentrancyGuard {
         } else {
             // Winner takes prize pool (total amount minus fee)
             token.safeTransfer(winner, game.amount * 2 - game.fee);
-            // Transfer fees to protocol owner
-            token.safeTransfer(owner(), game.fee);
+            // Transfer fees to resolver
+            token.safeTransfer(game.resolver, game.fee);
         }
         emit Resolved(gameId, winner);
     }

@@ -260,7 +260,7 @@ contract DuelTest is Test {
         uint256 expectedWinnerPrize = (AMOUNT * 2) - FEE;
         assertEq(token.balanceOf(player1), (AMOUNT * 10) - AMOUNT + expectedWinnerPrize, "Winner should receive prize");
         assertEq(token.balanceOf(player2), (AMOUNT * 10) - AMOUNT, "Loser should lose stake");
-        assertEq(token.balanceOf(duel.owner()), FEE, "Owner should receive fee");
+        assertEq(token.balanceOf(resolver), FEE, "Resolver should receive fee");
 
         // Verify game is settled
         (,,,,,, bool settled) = duel.games(gameId);
@@ -292,7 +292,7 @@ contract DuelTest is Test {
         // Check balances - both players should get their stakes back
         assertEq(token.balanceOf(player1), (AMOUNT * 10), "Player1 should get stake back");
         assertEq(token.balanceOf(player2), (AMOUNT * 10), "Player2 should get stake back");
-        assertEq(token.balanceOf(duel.owner()), 0, "Owner should not receive fee on draw");
+        assertEq(token.balanceOf(resolver), 0, "Resolver should not receive fee on draw");
 
         // Verify game is settled
         (,,,,,, bool settled) = duel.games(gameId);
