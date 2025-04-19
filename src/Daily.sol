@@ -56,9 +56,6 @@ contract Daily {
     /// @notice Map to track current streak for each user
     mapping(address => uint256) public streakOf;
 
-    /// @notice Map to track if a nullifier hash has been used
-    mapping(uint256 => bool) internal nullifierHashes;
-
     /*//////////////////////////////////////////////////////////////
                                CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
@@ -93,7 +90,6 @@ contract Daily {
 
         // Check if already claimed today
         if (lastClaim >= currentDay) {
-            // TODO: uncomment this
             revert AlreadyClaimed(currentDay);
         }
 
