@@ -156,8 +156,14 @@ contract RoyaleTest is Test {
         assertEq(royale.lobby(lobbyId), count + 1, "Lobby count should increment");
 
         // Verify new game state
-        (uint128 players, uint128 capacity, address game_resolver, uint256 game_amount, address game_token, bool game_settled) = 
-            royale.games(newGameId);
+        (
+            uint128 players,
+            uint128 capacity,
+            address game_resolver,
+            uint256 game_amount,
+            address game_token,
+            bool game_settled
+        ) = royale.games(newGameId);
         assertEq(players, 1, "New game should have 1 player");
         assertEq(capacity, CAPACITY, "New game capacity should match");
         assertEq(game_resolver, resolver, "New game resolver should match");

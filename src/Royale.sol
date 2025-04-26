@@ -254,7 +254,7 @@ contract Royale is ReentrancyGuard {
         bytes32 lobbyId = keccak256(abi.encodePacked(resolver, token, amount, capacity));
         uint256 count = lobby[lobbyId];
         if (count == 0) return bytes32(0);
-        
+
         // Check each game in reverse order
         for (uint256 i = count; i > 0; i--) {
             bytes32 gameId = keccak256(abi.encodePacked(lobbyId, i));
