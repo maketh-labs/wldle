@@ -200,6 +200,61 @@ contract RoyaleTest is Test {
         vm.stopPrank();
     }
 
+    function test_join_PlayerAlreadyJoinedFullGame() public {
+        // Create and fill game with player1
+        vm.prank(player1);
+        bytes32 firstGameId = royale.join(resolver, address(token), AMOUNT, CAPACITY);
+        vm.prank(player2);
+        royale.join(resolver, address(token), AMOUNT, CAPACITY);
+        vm.prank(player3);
+        royale.join(resolver, address(token), AMOUNT, CAPACITY);
+
+        // Verify game is full
+        (uint128 players,,,,,) = royale.games(firstGameId);
+        assertEq(players, CAPACITY, "Game should be full");
+
+        // Verify player1 is in the game
+        bytes32 playerGameKey = keccak256(abi.encodePacked(player1, firstGameId));
+        assertTrue(royale.joined(playerGameKey), "Player1 should be marked as joined");
+
+        // Get lobby ID for next game
+        bytes32 lobbyId = getLobbyId(resolver, address(token), AMOUNT, CAPACITY);
+        uint256 count = royale.lobby(lobbyId);
+        bytes32 expectedNewGameId = getGameId(lobbyId, count + 1);
+
+        // Try to join the full game again as player1 - should create new game
+        vm.prank(player1);
+        bytes32 newGameId = royale.join(resolver, address(token), AMOUNT, CAPACITY);
+
+        // Verify new game was created
+        assertEq(newGameId, expectedNewGameId, "Should create new game");
+        assertEq(royale.lobby(lobbyId), count + 1, "Lobby count should increment");
+
+        // Verify new game state
+        (
+            uint128 _players,
+            uint128 capacity,
+            address game_resolver,
+            uint256 game_amount,
+            address game_token,
+            bool game_settled
+        ) = royale.games(newGameId);
+        assertEq(_players, 1, "New game should have 1 player");
+        assertEq(capacity, CAPACITY, "New game capacity should match");
+        assertEq(game_resolver, resolver, "New game resolver should match");
+        assertEq(game_amount, AMOUNT, "New game amount should match");
+        assertEq(game_token, address(token), "New game token should match");
+        assertEq(game_settled, false, "New game should not be settled");
+
+        // Verify player1 is marked as joined in new game
+        playerGameKey = keccak256(abi.encodePacked(player1, newGameId));
+        assertTrue(royale.joined(playerGameKey), "Player1 should be marked as joined in new game");
+
+        // Verify first game is still full and unchanged
+        (players,,,,,) = royale.games(firstGameId);
+        assertEq(players, CAPACITY, "First game should remain full");
+    }
+
     /*//////////////////////////////////////////////////////////////
                              RESOLVE TESTS
     //////////////////////////////////////////////////////////////*/

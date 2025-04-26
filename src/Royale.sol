@@ -51,7 +51,6 @@ contract Royale is ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     error InvalidResolver();
-    error InsufficientValue();
     error AlreadySettled();
     error InvalidWinner();
     error InvalidSignature();
@@ -114,10 +113,7 @@ contract Royale is ReentrancyGuard {
         // Get the current game
         bytes32 currentGameId = keccak256(abi.encodePacked(lobbyId, count));
         Game storage game = games[currentGameId];
-
-        // Check if player already joined
-        bytes32 playerGameKey = keccak256(abi.encodePacked(msg.sender, currentGameId));
-        if (joined[playerGameKey]) revert PlayerAlreadyJoined();
+        bytes32 playerGameKey;
 
         // Check if we need to create a new game
         if (game.players == 0 || game.players == game.capacity || game.settled) {
@@ -135,6 +131,10 @@ contract Royale is ReentrancyGuard {
             emit Created(newGameId, msg.sender, resolver, token, amount, capacity);
             return newGameId;
         }
+
+        // Check if player already joined
+        playerGameKey = keccak256(abi.encodePacked(msg.sender, currentGameId));
+        if (joined[playerGameKey]) revert PlayerAlreadyJoined();
 
         // Join existing game
         game.players++;
@@ -243,9 +243,9 @@ contract Royale is ReentrancyGuard {
     /// @notice Get the game a player is in for a specific lobby
     /// @param player The address of the player
     /// @param resolver The resolver of the lobby
-    /// @param token The token of the lobby
-    /// @param amount The amount of the lobby
-    /// @param capacity The capacity of the lobby
+    /// @param token The token used in the lobby
+    /// @param amount The amount of tokens each player bet in the lobby
+    /// @param capacity The capacity of the games in the lobby
     function getPlayerGame(address player, address resolver, address token, uint256 amount, uint128 capacity)
         public
         view
