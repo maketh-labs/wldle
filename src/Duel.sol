@@ -89,7 +89,6 @@ contract Duel is ReentrancyGuard {
     function joinWithPermit(
         address resolver,
         address token,
-        uint256 amount,
         uint256 fee,
         ISignatureTransfer.PermitTransferFrom calldata permit,
         ISignatureTransfer.SignatureTransferDetails calldata transferDetails,
@@ -98,7 +97,8 @@ contract Duel is ReentrancyGuard {
         // Transfer tokens using Permit2's SignatureTransfer
         permit2.permitTransferFrom(permit, transferDetails, msg.sender, signature);
 
-        return _join(resolver, token, amount, fee);
+        // Use the amount from the permit details
+        return _join(resolver, token, permit.permitted.amount, fee);
     }
 
     /// @notice Internal join function

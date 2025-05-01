@@ -86,7 +86,6 @@ contract Royale is ReentrancyGuard {
     function joinWithPermit(
         address resolver,
         address token,
-        uint256 amount,
         uint128 capacity,
         ISignatureTransfer.PermitTransferFrom calldata permit,
         ISignatureTransfer.SignatureTransferDetails calldata transferDetails,
@@ -95,7 +94,8 @@ contract Royale is ReentrancyGuard {
         // Transfer tokens using Permit2's SignatureTransfer
         permit2.permitTransferFrom(permit, transferDetails, msg.sender, signature);
 
-        return _join(resolver, token, amount, capacity);
+        // Use the amount from the permit details
+        return _join(resolver, token, permit.permitted.amount, capacity);
     }
 
     /// @notice Internal join function
@@ -238,29 +238,5 @@ contract Royale is ReentrancyGuard {
     function isPlayerInGame(bytes32 gameId, address player) public view returns (bool) {
         bytes32 playerGameKey = keccak256(abi.encodePacked(player, gameId));
         return joined[playerGameKey];
-    }
-
-    /// @notice Get the game a player is in for a specific lobby
-    /// @param player The address of the player
-    /// @param resolver The resolver of the lobby
-    /// @param token The token used in the lobby
-    /// @param amount The amount of tokens each player bet in the lobby
-    /// @param capacity The capacity of the games in the lobby
-    function getPlayerGame(address player, address resolver, address token, uint256 amount, uint128 capacity)
-        public
-        view
-        returns (bytes32)
-    {
-        bytes32 lobbyId = keccak256(abi.encodePacked(resolver, token, amount, capacity));
-        uint256 count = lobby[lobbyId];
-        if (count == 0) return bytes32(0);
-
-        // Check each game in reverse order
-        for (uint256 i = count; i > 0; i--) {
-            bytes32 gameId = keccak256(abi.encodePacked(lobbyId, i));
-            bytes32 playerGameKey = keccak256(abi.encodePacked(player, gameId));
-            if (joined[playerGameKey]) return gameId;
-        }
-        return bytes32(0);
     }
 }
