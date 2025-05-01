@@ -29,10 +29,13 @@ contract Royale is ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /// @dev lobbyId is created by keccak256(abi.encodePacked(resolver, token, amount, capacity))
-    mapping(bytes32 lobbyId => uint256 count) public lobby;
+    mapping(bytes32 lobbyId => uint256 closedCount) public closedCount;
+    /// @dev playerLobbyKey is created by keccak256(abi.encodePacked(player, lobbyId))
+    mapping(bytes32 playerLobbyKey => uint256 lastJoinedCount) public lastJoinedCount;
     /// @dev gameId is created by keccak256(abi.encodePacked(lobbyId, count))
     mapping(bytes32 gameId => Game game) public games;
     /// @dev Maps hash of player address and gameId to a boolean indicating if they joined
+    /// @dev playerGameKey is created by keccak256(abi.encodePacked(player, gameId))
     mapping(bytes32 playerGameKey => bool joined) public joined;
 
     /// @dev The Permit2 contract address
@@ -56,6 +59,9 @@ contract Royale is ReentrancyGuard {
     error InvalidSignature();
     error PlayerAlreadyJoined();
     error InvalidPayouts();
+    error InvalidCapacity();
+    error GameNotCreated();
+    error GameNotFull();
 
     /*//////////////////////////////////////////////////////////////
                             INITIALIZATION
@@ -105,43 +111,44 @@ contract Royale is ReentrancyGuard {
     /// @param capacity Maximum number of players in the game
     function _join(address resolver, address token, uint256 amount, uint128 capacity) internal returns (bytes32) {
         if (resolver == address(0)) revert InvalidResolver();
+        if (capacity < 2) revert InvalidCapacity();
 
         // Key for finding matching games
         bytes32 lobbyId = keccak256(abi.encodePacked(resolver, token, amount, capacity));
-        uint256 count = lobby[lobbyId];
+        uint256 closedCount = closedCount[lobbyId];
 
-        // Get the current game
-        bytes32 currentGameId = keccak256(abi.encodePacked(lobbyId, count));
-        Game storage game = games[currentGameId];
-        bytes32 playerGameKey;
+        bytes32 playerLobbyKey = keccak256(abi.encodePacked(msg.sender, lobbyId));
+        uint256 lastJoinedCount = lastJoinedCount[playerLobbyKey];
+
+        uint256 nextCount = closedCount > lastJoinedCount ? closedCount + 1 : lastJoinedCount + 1;
+
+        // Get the next game
+        bytes32 nextGameId = keccak256(abi.encodePacked(lobbyId, nextCount));
+        Game storage game = games[nextGameId];
+        bytes32 playerGameKey = keccak256(abi.encodePacked(msg.sender, nextGameId));
+
+        joined[playerGameKey] = true;
+        lastJoinedCount[playerLobbyKey] = nextCount;
 
         // Check if we need to create a new game
-        if (game.players == 0 || game.players == game.capacity || game.settled) {
-            count++;
+        if (game.players == 0) {
             // Create new game
-            bytes32 newGameId = keccak256(abi.encodePacked(lobbyId, count));
-            games[newGameId] =
+            games[nextGameId] =
                 Game({players: 1, capacity: capacity, resolver: resolver, amount: amount, token: token, settled: false});
 
-            // Update player's game
-            playerGameKey = keccak256(abi.encodePacked(msg.sender, newGameId));
-            joined[playerGameKey] = true;
+            emit Created(nextGameId, msg.sender, resolver, token, amount, capacity);
+        } else {
+            // Join existing game
+            game.players++;
 
-            lobby[lobbyId] = count;
-            emit Created(newGameId, msg.sender, resolver, token, amount, capacity);
-            return newGameId;
+            if (game.players == game.capacity) {
+                closedCount[lobbyId]++;
+            }
+
+            emit Joined(nextGameId, msg.sender, game.players);
         }
 
-        // Check if player already joined
-        playerGameKey = keccak256(abi.encodePacked(msg.sender, currentGameId));
-        if (joined[playerGameKey]) revert PlayerAlreadyJoined();
-
-        // Join existing game
-        game.players++;
-        joined[playerGameKey] = true;
-
-        emit Joined(currentGameId, msg.sender, game.players);
-        return currentGameId;
+        return nextGameId;
     }
 
     /// @notice Internal function to verify resolver signature
@@ -177,8 +184,16 @@ contract Royale is ReentrancyGuard {
     {
         Game storage game = games[gameId];
 
+        bytes32 lobbyId = keccak256(abi.encodePacked(game.resolver, game.token, game.amount, game.capacity));
+        uint256 closedCount = closedCount[lobbyId];
+
         // Verify game state
         if (game.settled) revert AlreadySettled();
+        if (game.players == 0) revert GameNotCreated();
+        if (game.players < game.capacity) {
+            bytes32 oldestUnclosedGameId = keccak256(abi.encodePacked(lobbyId, closedCount + 1));
+            if (oldestUnclosedGameId != gameId) revert GameNotFull();
+        }
 
         // Verify winners and amounts
         if (winners.length != amounts.length) revert InvalidPayouts();
@@ -201,6 +216,10 @@ contract Royale is ReentrancyGuard {
         // Mark game as settled
         game.settled = true;
 
+        if (game.players < game.capacity) {
+            closedCount[lobbyId]++;
+        }
+
         // Distribute payouts
         IERC20 token = IERC20(game.token);
         for (uint256 i = 0; i < winners.length; i++) {
@@ -214,22 +233,6 @@ contract Royale is ReentrancyGuard {
         }
 
         emit Resolved(gameId, winners, amounts);
-    }
-
-    /// @notice Get the number of players in the current game for a lobby
-    /// @param resolver The resolver of the lobby
-    /// @param token The token of the lobby
-    /// @param amount The amount of the lobby
-    /// @param capacity The capacity of the lobby
-    function getPlayerCount(address resolver, address token, uint256 amount, uint128 capacity)
-        public
-        view
-        returns (uint256)
-    {
-        bytes32 lobbyId = keccak256(abi.encodePacked(resolver, token, amount, capacity));
-        uint256 count = lobby[lobbyId];
-        bytes32 gameId = keccak256(abi.encodePacked(lobbyId, count));
-        return games[gameId].players;
     }
 
     /// @notice Check if a player is in a game
