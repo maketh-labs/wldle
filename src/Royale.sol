@@ -19,6 +19,7 @@ contract Royale is ReentrancyGuard {
         uint128 players;
         uint128 capacity;
         address resolver;
+        address creator;
         uint256 amount;
         address token;
         bool settled;
@@ -29,11 +30,14 @@ contract Royale is ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /// @dev lobbyId is created by keccak256(abi.encodePacked(resolver, token, amount, capacity))
-    mapping(bytes32 lobbyId => uint256 closedCount) public closedCount;
+    mapping(bytes32 lobbyId => uint256 count) public lobby;
+
     /// @dev playerLobbyKey is created by keccak256(abi.encodePacked(player, lobbyId))
-    mapping(bytes32 playerLobbyKey => uint256 lastJoinedCount) public lastJoinedCount;
+    mapping(bytes32 playerLobbyKey => uint256 count) public countOf;
+
     /// @dev gameId is created by keccak256(abi.encodePacked(lobbyId, count))
     mapping(bytes32 gameId => Game game) public games;
+
     /// @dev Maps hash of player address and gameId to a boolean indicating if they joined
     /// @dev playerGameKey is created by keccak256(abi.encodePacked(player, gameId))
     mapping(bytes32 playerGameKey => bool joined) public joined;
@@ -46,7 +50,7 @@ contract Royale is ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     event Created(bytes32 gameId, address player, address resolver, address token, uint256 amount, uint128 capacity);
-    event Joined(bytes32 gameId, address player, uint128 players);
+    event Joined(bytes32 gameId, address creator, address player, uint128 players);
     event Resolved(bytes32 gameId, address[] winners, uint256[] amounts);
 
     /*//////////////////////////////////////////////////////////////
@@ -60,8 +64,8 @@ contract Royale is ReentrancyGuard {
     error PlayerAlreadyJoined();
     error InvalidPayouts();
     error InvalidCapacity();
-    error GameNotCreated();
-    error GameNotFull();
+    error NotStarted();
+    error NotOldestOpenGame();
 
     /*//////////////////////////////////////////////////////////////
                             INITIALIZATION
@@ -115,12 +119,12 @@ contract Royale is ReentrancyGuard {
 
         // Key for finding matching games
         bytes32 lobbyId = keccak256(abi.encodePacked(resolver, token, amount, capacity));
-        uint256 closedCount = closedCount[lobbyId];
+        uint256 count = lobby[lobbyId];
 
         bytes32 playerLobbyKey = keccak256(abi.encodePacked(msg.sender, lobbyId));
-        uint256 lastJoinedCount = lastJoinedCount[playerLobbyKey];
+        uint256 lastJoinedCount = countOf[playerLobbyKey];
 
-        uint256 nextCount = closedCount > lastJoinedCount ? closedCount + 1 : lastJoinedCount + 1;
+        uint256 nextCount = count > lastJoinedCount ? count + 1 : lastJoinedCount + 1;
 
         // Get the next game
         bytes32 nextGameId = keccak256(abi.encodePacked(lobbyId, nextCount));
@@ -128,13 +132,20 @@ contract Royale is ReentrancyGuard {
         bytes32 playerGameKey = keccak256(abi.encodePacked(msg.sender, nextGameId));
 
         joined[playerGameKey] = true;
-        lastJoinedCount[playerLobbyKey] = nextCount;
+        countOf[playerLobbyKey] = nextCount;
 
         // Check if we need to create a new game
         if (game.players == 0) {
             // Create new game
-            games[nextGameId] =
-                Game({players: 1, capacity: capacity, resolver: resolver, amount: amount, token: token, settled: false});
+            games[nextGameId] = Game({
+                players: 1,
+                capacity: capacity,
+                resolver: resolver,
+                creator: msg.sender,
+                amount: amount,
+                token: token,
+                settled: false
+            });
 
             emit Created(nextGameId, msg.sender, resolver, token, amount, capacity);
         } else {
@@ -142,10 +153,10 @@ contract Royale is ReentrancyGuard {
             game.players++;
 
             if (game.players == game.capacity) {
-                closedCount[lobbyId]++;
+                lobby[lobbyId]++;
             }
 
-            emit Joined(nextGameId, msg.sender, game.players);
+            emit Joined(nextGameId, game.creator, msg.sender, game.players);
         }
 
         return nextGameId;
@@ -185,14 +196,15 @@ contract Royale is ReentrancyGuard {
         Game storage game = games[gameId];
 
         bytes32 lobbyId = keccak256(abi.encodePacked(game.resolver, game.token, game.amount, game.capacity));
-        uint256 closedCount = closedCount[lobbyId];
+        uint256 count = lobby[lobbyId];
 
         // Verify game state
         if (game.settled) revert AlreadySettled();
-        if (game.players == 0) revert GameNotCreated();
+        if (game.players == 0) revert NotStarted();
+        // Resolving games that are not full should only be possible for the oldest open game
         if (game.players < game.capacity) {
-            bytes32 oldestUnclosedGameId = keccak256(abi.encodePacked(lobbyId, closedCount + 1));
-            if (oldestUnclosedGameId != gameId) revert GameNotFull();
+            bytes32 oldestOpenGameId = keccak256(abi.encodePacked(lobbyId, count + 1));
+            if (oldestOpenGameId != gameId) revert NotOldestOpenGame();
         }
 
         // Verify winners and amounts
@@ -217,7 +229,7 @@ contract Royale is ReentrancyGuard {
         game.settled = true;
 
         if (game.players < game.capacity) {
-            closedCount[lobbyId]++;
+            lobby[lobbyId]++;
         }
 
         // Distribute payouts
@@ -241,5 +253,23 @@ contract Royale is ReentrancyGuard {
     function isPlayerInGame(bytes32 gameId, address player) public view returns (bool) {
         bytes32 playerGameKey = keccak256(abi.encodePacked(player, gameId));
         return joined[playerGameKey];
+    }
+
+    /// @notice Get the number of players in the current game for a lobby
+    /// @notice Specifically, this returns the player count of the oldest open game.
+    /// @param resolver The resolver of the lobby
+    /// @param token The token of the lobby
+    /// @param amount The amount of the lobby
+    /// @param capacity The capacity of the lobby
+    function getPlayerCount(address resolver, address token, uint256 amount, uint128 capacity)
+        public
+        view
+        returns (uint128)
+    {
+        bytes32 lobbyId = keccak256(abi.encodePacked(resolver, token, amount, capacity));
+        uint256 oldestOpenGameIndex = lobby[lobbyId] + 1;
+        bytes32 gameId = keccak256(abi.encodePacked(lobbyId, oldestOpenGameIndex));
+        // Returns 0 if the game doesn't exist or hasn't been created yet
+        return games[gameId].players;
     }
 }
