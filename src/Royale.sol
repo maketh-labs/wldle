@@ -105,7 +105,7 @@ contract Royale is ReentrancyGuard {
         permit2.permitTransferFrom(permit, transferDetails, msg.sender, signature);
 
         // Use the amount from the permit details
-        return _join(resolver, token, permit.permitted.amount, capacity);
+        return _join(resolver, token, transferDetails.requestedAmount, capacity);
     }
 
     /// @notice Internal join function
