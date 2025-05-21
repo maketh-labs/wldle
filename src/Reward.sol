@@ -29,6 +29,7 @@ contract Reward is Ownable, ReentrancyGuard {
     error InvalidSignature();
     error InvalidWorldIDProof();
     error InsufficientBalance(uint256 required, uint256 available);
+    error InvalidPermitTransfer();
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
@@ -106,6 +107,9 @@ contract Reward is Ownable, ReentrancyGuard {
         ISignatureTransfer.SignatureTransferDetails calldata transferDetails,
         bytes calldata signature
     ) external nonReentrant {
+        // Ensure the tokens are sent to this contract
+        if (transferDetails.to != address(this)) revert InvalidPermitTransfer();
+
         // Transfer tokens using Permit2's SignatureTransfer
         permit2.permitTransferFrom(permit, transferDetails, msg.sender, signature);
 

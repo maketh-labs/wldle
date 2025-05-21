@@ -27,20 +27,13 @@ contract RewardTest is Test {
         dlyToken = new ERC20Mock();
         wordToken = new ERC20Mock();
 
-        reward = new Reward(
-            address(dlyToken),
-            address(wordToken),
-            WORLD_ID,
-            "app_id",
-            "action_id",
-            address(PERMIT2)
-        );
+        reward = new Reward(address(dlyToken), address(wordToken), WORLD_ID, "app_id", "action_id", address(PERMIT2));
 
         // Mint initial tokens
         dlyToken.mint(user, INITIAL_BALANCE);
         wordToken.mint(address(reward), INITIAL_BALANCE);
         vm.stopPrank();
-        
+
         // Approve Permit2 contract for permit joins
         vm.prank(user);
         dlyToken.approve(address(PERMIT2), type(uint256).max);
@@ -121,6 +114,30 @@ contract RewardTest is Test {
         // Try to claim with wrong category (should fail)
         vm.expectRevert(Reward.InvalidSignature.selector);
         reward.claim(amount, wrongCategory, signature);
+        vm.stopPrank();
+    }
+
+    function test_MigrateWithPermit_RevertInvalidDestination() public {
+        uint256 amount = 100 ether;
+
+        // Create permit data
+        ISignatureTransfer.PermitTransferFrom memory permit = ISignatureTransfer.PermitTransferFrom({
+            permitted: ISignatureTransfer.TokenPermissions({token: address(dlyToken), amount: amount}),
+            nonce: 0,
+            deadline: block.timestamp + 1
+        });
+
+        // Create transfer details with wrong destination (user instead of contract)
+        ISignatureTransfer.SignatureTransferDetails memory transferDetails =
+            ISignatureTransfer.SignatureTransferDetails({to: user, requestedAmount: amount});
+
+        // Create signature (not actually used since we expect a revert before signature verification)
+        bytes memory signature = new bytes(65);
+
+        // Attempt to migrate with wrong destination
+        vm.startPrank(user);
+        vm.expectRevert(Reward.InvalidPermitTransfer.selector);
+        reward.migrateWithPermit(permit, transferDetails, signature);
         vm.stopPrank();
     }
 }

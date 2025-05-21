@@ -287,6 +287,28 @@ contract RoyaleTest is Test {
         vm.stopPrank();
     }
 
+    function test_joinWithPermit_RevertInvalidDestination() public {
+        // Create permit data
+        ISignatureTransfer.PermitTransferFrom memory permit = ISignatureTransfer.PermitTransferFrom({
+            permitted: ISignatureTransfer.TokenPermissions({token: address(token), amount: AMOUNT}),
+            nonce: 0,
+            deadline: block.timestamp + 1
+        });
+
+        // Create transfer details with wrong destination (player2 instead of contract)
+        ISignatureTransfer.SignatureTransferDetails memory transferDetails =
+            ISignatureTransfer.SignatureTransferDetails({to: player2, requestedAmount: AMOUNT});
+
+        // Create signature (not actually used since we expect a revert before signature verification)
+        bytes memory signature = new bytes(65);
+
+        // Attempt to join with wrong destination
+        vm.startPrank(player1);
+        vm.expectRevert(Royale.InvalidPermitTransfer.selector);
+        royale.joinWithPermit(resolver, address(token), CAPACITY, permit, transferDetails, signature);
+        vm.stopPrank();
+    }
+
     /*//////////////////////////////////////////////////////////////
                              RESOLVE TESTS
     //////////////////////////////////////////////////////////////*/

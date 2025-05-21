@@ -64,6 +64,7 @@ contract Royale is ReentrancyGuard {
     error PlayerAlreadyJoined();
     error InvalidPayouts();
     error InvalidCapacity();
+    error InvalidPermitTransfer();
     error NotStarted();
     error NotOldestOpenGame();
 
@@ -101,9 +102,10 @@ contract Royale is ReentrancyGuard {
         ISignatureTransfer.SignatureTransferDetails calldata transferDetails,
         bytes calldata signature
     ) public nonReentrant returns (bytes32) {
+        // Ensure the tokens are sent to this contract
+        if (transferDetails.to != address(this)) revert InvalidPermitTransfer();
         // Transfer tokens using Permit2's SignatureTransfer
         permit2.permitTransferFrom(permit, transferDetails, msg.sender, signature);
-
         // Use the amount from the permit details
         return _join(resolver, token, transferDetails.requestedAmount, capacity);
     }
