@@ -3,12 +3,15 @@ pragma solidity ^0.8.28;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ISignatureTransfer} from "@uniswap/permit2/src/interfaces/ISignatureTransfer.sol";
 
 /// @title Royale
 /// @notice Battle Royale between N players.
-contract Royale is ReentrancyGuard {
+contract Royale is Initializable, ReentrancyGuardUpgradeable, OwnableUpgradeable, UUPSUpgradeable {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -75,6 +78,13 @@ contract Royale is ReentrancyGuard {
     /// @param _permit2 0x000000000022D473030F116dDEE9F6B43aC78BA3
     constructor(address _permit2) {
         permit2 = ISignatureTransfer(_permit2);
+    }
+
+    /// @param _owner The owner of the contract
+    function initialize(address _owner) external initializer {
+        __ReentrancyGuard_init();
+        __Ownable_init(_owner);
+        __UUPSUpgradeable_init();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -248,6 +258,18 @@ contract Royale is ReentrancyGuard {
 
         emit Resolved(gameId, winners, amounts);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                              UPGRADE LOGIC
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Authorize upgrade (only owner can upgrade)
+    /// @param newImplementation The new implementation contract address
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    /*//////////////////////////////////////////////////////////////
+                              VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Check if a player is in a game
     /// @param gameId The id of the game

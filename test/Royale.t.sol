@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {Test, console} from "forge-std/Test.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Royale} from "../src/Royale.sol";
 import {ISignatureTransfer} from "@uniswap/permit2/src/interfaces/ISignatureTransfer.sol";
 
@@ -31,8 +32,18 @@ contract RoyaleTest is Test {
     event Resolved(bytes32 gameId, address[] winners, uint256[] amounts);
 
     function setUp() public {
-        // Deploy contracts
-        royale = new Royale(address(PERMIT2));
+        // Deploy implementation
+        Royale implementation = new Royale(address(PERMIT2));
+
+        // Deploy proxy with initialization
+        bytes memory initData = abi.encodeWithSelector(
+            Royale.initialize.selector,
+            address(this) // owner
+        );
+
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        royale = Royale(address(proxy));
+
         token = new ERC20Mock();
 
         // Setup accounts
